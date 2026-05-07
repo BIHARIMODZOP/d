@@ -261,7 +261,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-ive_attacks:
+active_attacks:
             msg = "🔥 **Active Attacks**\n\n"
             for aid, att in list(active_attacks.items()):
                 elapsed = int(time.time() - att["start"])
