@@ -235,33 +235,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data_cmd = query.data
 
-    if data_cmd == "status":
-        msg = "🔥 <b>Active Attacks</b>\n\n"
-        if not active_attacks: msg += "No active attacks."
-        for aid, att in list(active_attacks.items()):
-            msg += f"• <code>{aid}</code> - {att['target']} - {att['status']}\n"
-        await query.message.edit_text(msg, parse_mode='HTML')
-    elif data_cmd == "profile":
-        remaining = get_remaining_attacks(user_id)
-        msg = f"👤 <b>Your Profile</b>\n\nID: <code>{user_id}</code>\nAttacks Left: {remaining}"
-        await query.message.edit_text(msg, parse_mode='HTML')
-    elif data_cmd == "help":
-        await query.message.edit_text("❓ <b>Help Menu</b>\nUse /attack to start.", parse_mode='HTML')
-    elif data_cmd == "back":
-        await start(update, context)
+    if not is_approved(user_id) and not is_admin(user_id):
+        await query.message.edit_text("❌ Unauthorized!")
+        return
 
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("attack", attack_command))
-    app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("🔥 DDoS BOT STARTED")
-    app.run_polling()
+    if data_cmd == "attack":
+        await attack_command(update, context)
 
-if __name__ == "__main__":
-    main()
-active_attacks:
+    elif data_cmd == "status":
+        if active_attacks:
             msg = "🔥 **Active Attacks**\n\n"
             for aid, att in list(active_attacks.items()):
                 elapsed = int(time.time() - att["start"])
@@ -269,13 +251,12 @@ active_attacks:
             await query.message.edit_text(msg, parse_mode='Markdown')
         else:
             await query.message.edit_text("✅ No active attacks")
-    
-    elif data == "profile":
+
+    elif data_cmd == "profile":
         remaining = get_remaining_attacks(user_id)
         cooldown = check_cooldown(user_id)
-        user_data = data["users"].get(str(user_id), {})
-        used = user_data.get("attacks_used", 0)
-        max_attacks = user_data.get("max_attacks", "Unlimited" if is_admin(user_id) else 0)
+        user_info = data["users"].get(str(user_id), {})
+        used = user_info.get("attacks_used", 0)
         
         msg = f"👤 **Your Profile**\n\n"
         msg += f"🆔 ID: `{user_id}`\n"
@@ -284,8 +265,8 @@ active_attacks:
         msg += f"🎯 Attacks Left: {remaining}\n"
         msg += f"⏳ Cooldown: {int(cooldown)}s left" if cooldown > 0 else "✅ Ready to attack"
         await query.message.edit_text(msg, parse_mode='Markdown')
-    
-    elif data == "logs":
+
+    elif data_cmd == "logs":
         logs = load_logs()
         recent = [log for log in logs if log.get("user_id") == user_id][-5:]
         if not recent:
@@ -296,8 +277,8 @@ active_attacks:
             timestamp = datetime.fromtimestamp(log.get("timestamp", time.time())).strftime("%H:%M:%S")
             msg += f"• `{log['target']}` - {log['duration']}s - {log.get('packets', 0)} packets [{timestamp}]\n"
         await query.message.edit_text(msg, parse_mode='Markdown')
-    
-    elif data == "help":
+
+    elif data_cmd == "help":
         msg = "❓ **Help**\n\n"
         msg += "🚀 `/attack` - Start attack\n"
         msg += "📊 `/status` - Active attacks\n"
@@ -306,8 +287,8 @@ active_attacks:
         msg += "**Attack Process:**\n"
         msg += "1. `/attack`\n2. Enter IP\n3. Enter Port\n4. Enter Duration\n5. Done!"
         await query.message.edit_text(msg)
-    
-    elif data == "admin" and is_admin(user_id):
+
+    elif data_cmd == "admin" and is_admin(user_id):
         keyboard = [
             [InlineKeyboardButton("➕ Add User", callback_data="admin_add")],
             [InlineKeyboardButton("➖ Remove User", callback_data="admin_remove")],
@@ -316,16 +297,16 @@ active_attacks:
             [InlineKeyboardButton("🔙 Back", callback_data="back")]
         ]
         await query.message.edit_text("👑 **Admin Panel**", reply_markup=InlineKeyboardMarkup(keyboard))
-    
-    elif data == "admin_add" and is_admin(user_id):
+
+    elif data_cmd == "admin_add" and is_admin(user_id):
         context.user_data["admin_action"] = "add_user"
         await query.message.edit_text("Send user ID and max attacks:\n`<user_id> <max_attacks>`\nExample: `123456789 50`")
-    
-    elif data == "admin_remove" and is_admin(user_id):
+
+    elif data_cmd == "admin_remove" and is_admin(user_id):
         context.user_data["admin_action"] = "remove_user"
         await query.message.edit_text("Send user ID to remove:\nExample: `123456789`")
-    
-    elif data == "admin_users" and is_admin(user_id):
+
+    elif data_cmd == "admin_users" and is_admin(user_id):
         if not data["users"]:
             await query.message.edit_text("📭 No users added yet")
             return
@@ -336,12 +317,12 @@ active_attacks:
             max_atk = udata.get("max_attacks", 0)
             msg += f"• `{uid}` (@{username}) - {used}/{max_atk}\n"
         await query.message.edit_text(msg)
-    
-    elif data == "admin_limit" and is_admin(user_id):
+
+    elif data_cmd == "admin_limit" and is_admin(user_id):
         context.user_data["admin_action"] = "set_limit"
         await query.message.edit_text("Send user ID and new limit:\n`<user_id> <new_limit>`\nExample: `123456789 100`")
-    
-    elif data == "back":
+
+    elif data_cmd == "back":
         await start(update, context)
 
 async def admin_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -391,7 +372,6 @@ async def admin_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Invalid format! Use: `user_id new_limit`")
         context.user_data.pop("admin_action", None)
 
-# ==================== MAIN ====================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     
